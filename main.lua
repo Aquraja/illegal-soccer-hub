@@ -1,3 +1,4 @@
+cat > /home/claude/illegal-soccer-hub/main.lua << 'ENDOFFILE'
 --[[
     ╔══════════════════════════════════════════════════╗
     ║          ILLEGAL SOCCER HUB  v1.2               ║
