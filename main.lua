@@ -1,701 +1,328 @@
---[[
-    ╔══════════════════════════════════════════════════╗
-    ║          ILLEGAL SOCCER HUB  v1.4               ║
-    ║  loadstring(game:HttpGet("RAW_URL"))()           ║
-    ║  Fix v1.4: GUI visual lock + touch drag fix      ║
-    ╚══════════════════════════════════════════════════╝
-]]
+-- Illegal Soccer Exploit Suite | Main Orchestrator
+-- Target: Roblox Illegal Soccer Game
+-- Executor: Delta, Synapse X, Script-Ware
+-- Structure: Modular | Load-on-demand | State-managed
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService     = game:GetService("TweenService")
+local exploit_version = "2.1"
+local loaded_modules = {}
+local active_exploits = {}
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
-local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid    = Character:WaitForChild("Humanoid")
-
-local Config = {
-    InfiniteEnergy = false,
-    NoCooldown     = false,
-    AutoSprint     = false,
-    SprintSpeed    = 28,
-    NormalSpeed    = 16,
-}
-
-local State = {
-    HubOpen      = true,
-    Dragging     = false,
-    DragStart    = Vector2.new(),
-    FrameStart   = Vector2.new(),
-    sprintConn   = nil,
-    energyConn   = nil,
-    cooldownConn = nil,
-}
-
--- ══════════════════════════════════════
---  DEBUG LOGGER
--- ══════════════════════════════════════
-local logLines = {}
-local function log(msg)
-    table.insert(logLines, 1, msg)
-    if #logLines > 6 then table.remove(logLines) end
-end
-
--- ══════════════════════════════════════
---  SCANNER — cari semua GUI bar di PlayerGui
--- ══════════════════════════════════════
-local ENERGY_KEYWORDS = {
-    "energy","stamina","sprint","dash","fuel","power",
-    "charge","bar","gauge","meter","stam","run","endurance"
-}
-local COOLDOWN_KEYWORDS = {
-    "cooldown","cd","timer","delay","wait","recharge","ability","skill","item"
-}
-
-local function matchAny(name, keywords)
-    local n = name:lower()
-    for _, kw in ipairs(keywords) do
-        if n:find(kw, 1, true) then return true end
-    end
-    return false
-end
-
--- Cari Frame/ImageLabel yang merupakan bar (Size.X.Scale berubah saat dipakai)
-local function findUIBars(keywords)
-    local results = {}
-    local seen = {}
-    for _, obj in ipairs(PlayerGui:GetDescendants()) do
-        local path = obj:GetFullName()
-        if not seen[path] then
-            seen[path] = true
-            -- Cari Frame atau ImageLabel yang namanya cocok keyword
-            if (obj:IsA("Frame") or obj:IsA("ImageLabel") or obj:IsA("TextLabel")) then
-                if matchAny(obj.Name, keywords) then
-                    table.insert(results, obj)
-                end
-            end
-            -- Cari juga parent dengan nama cocok yang punya child bernama "Fill"/"Bar"/"Inner"
-            if obj:IsA("Frame") and matchAny(obj.Name, keywords) then
-                for _, child in ipairs(obj:GetChildren()) do
-                    if child:IsA("Frame") or child:IsA("ImageLabel") then
-                        local cn = child.Name:lower()
-                        if cn:find("fill") or cn:find("bar") or cn:find("inner") or cn:find("progress") then
-                            table.insert(results, child)
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return results
-end
-
--- Cari semua NumberValue/IntValue di seluruh game (ValueBase)
-local function findValueBases(keywords)
-    local results = {}
-    local seen = {}
-    local searchRoots = {
-        Character,
-        LocalPlayer,
-        PlayerGui,
-        LocalPlayer:FindFirstChild("Backpack"),
-        LocalPlayer:FindFirstChild("PlayerScripts"),
-        workspace,
+-- ============ LOGGER ============
+local function log(level, msg)
+    local prefix = {
+        INFO = "[INFO]",
+        WARN = "[WARN]",
+        ERROR = "[ERROR]",
+        SUCCESS = "[✓]"
     }
-    for _, root in ipairs(searchRoots) do
-        if root then
-            local ok, descs = pcall(function() return root:GetDescendants() end)
-            if ok then
-                for _, v in ipairs(descs) do
-                    local path = v:GetFullName()
-                    if not seen[path] then
-                        seen[path] = true
-                        if v:IsA("NumberValue") or v:IsA("IntValue")
-                        or v:IsA("DoubleConstrainedValue") or v:IsA("IntConstrainedValue") then
-                            if matchAny(v.Name, keywords) then
-                                table.insert(results, v)
+    print(prefix[level or "INFO"] .. " " .. msg)
+end
+
+-- ============ MODULE LOADER ============
+local function load_module(module_name, code)
+    pcall(function()
+        loaded_modules[module_name] = code()
+        log("SUCCESS", "Loaded: " .. module_name)
+    end)
+end
+
+-- ============ CORE MODULES ============
+
+-- Module: Stamina Controller
+load_module("stamina", function()
+    local stamina_active = false
+    return {
+        toggle = function()
+            stamina_active = not stamina_active
+            log("INFO", "Stamina: " .. (stamina_active and "ON" or "OFF"))
+            
+            if stamina_active then
+                spawn(function()
+                    while stamina_active do
+                        pcall(function()
+                            local player = game.Players.LocalPlayer
+                            if player.Character then
+                                local stats = player.Character:FindFirstChild("Stats")
+                                if stats and stats:FindFirstChild("Stamina") then
+                                    stats.Stamina.Value = 100
+                                end
                             end
-                        end
+                        end)
+                        wait(0.03)
                     end
-                end
+                end)
             end
+            active_exploits.stamina = stamina_active
+            return stamina_active
+        end,
+        status = function()
+            return stamina_active
         end
-    end
-    return results
-end
+    }
+end)
 
--- Cari attribute di semua instance
-local function findAttributes(keywords)
-    local results = {}
-    local targets = {Character, LocalPlayer, workspace}
-    for _, target in ipairs(targets) do
-        if target then
-            local ok, attrs = pcall(function() return target:GetAttributes() end)
-            if ok and attrs then
-                for name, val in pairs(attrs) do
-                    if type(val) == "number" and matchAny(name, keywords) then
-                        table.insert(results, {obj = target, name = name, val = val})
-                    end
-                end
-            end
-        end
-    end
-    return results
-end
-
--- ══════════════════════════════════════
---  FEATURE: INFINITE ENERGY
--- ══════════════════════════════════════
-local energyMaxCache = {}
-
-local function enableInfiniteEnergy()
-    if State.energyConn then State.energyConn:Disconnect() end
-    energyMaxCache = {}
-    local foundAnything = false
-
-    State.energyConn = RunService.Heartbeat:Connect(function()
-        local touched = 0
-
-        -- 1. Lock ValueBase
-        for _, v in ipairs(findValueBases(ENERGY_KEYWORDS)) do
-            local path = v:GetFullName()
-            local trueMax = v.Value
-            if v:IsA("DoubleConstrainedValue") or v:IsA("IntConstrainedValue") then
-                trueMax = v.MaxValue
-            end
-            if trueMax > (energyMaxCache[path] or 0) then
-                energyMaxCache[path] = trueMax
-            end
-            local mx = energyMaxCache[path] or 100
-            if v.Value < mx then
-                pcall(function() v.Value = mx end)
-                touched = touched + 1
-            end
-        end
-
-        -- 2. Lock attributes
-        for _, entry in ipairs(findAttributes(ENERGY_KEYWORDS)) do
-            local key = entry.obj:GetFullName() .. "::" .. entry.name
-            local mx = entry.obj:GetAttribute("Max"..entry.name)
-                    or entry.obj:GetAttribute(entry.name.."Max")
-                    or energyMaxCache[key] or entry.val
-            if entry.val > (energyMaxCache[key] or 0) then
-                energyMaxCache[key] = entry.val
-            end
-            mx = energyMaxCache[key] or 100
-            if entry.val < mx then
-                pcall(function() entry.obj:SetAttribute(entry.name, mx) end)
-                touched = touched + 1
-            end
-        end
-
-        -- 3. Lock GUI bar — paksa Size.X.Scale = 1 (bar full)
-        for _, bar in ipairs(findUIBars(ENERGY_KEYWORDS)) do
-            -- Kalau bar punya Scale X yang bukan 1, paksa ke 1
-            if bar:IsA("Frame") or bar:IsA("ImageLabel") then
-                if bar.Size.X.Scale < 0.99 and bar.Size.X.Scale > 0 then
-                    pcall(function()
-                        bar.Size = UDim2.new(1, bar.Size.X.Offset, bar.Size.Y.Scale, bar.Size.Y.Offset)
-                    end)
-                    touched = touched + 1
-                end
-            end
-        end
-
-        -- 4. Paksa WalkSpeed tetap sprint kalau auto sprint aktif
-        if Config.AutoSprint and Humanoid and Humanoid.Parent then
-            Humanoid.WalkSpeed = Config.SprintSpeed
-        end
-
-        if touched > 0 and not foundAnything then
-            foundAnything = true
-            log("Energy: locked " .. touched .. " object(s)")
-        end
-    end)
-end
-
-local function disableInfiniteEnergy()
-    if State.energyConn then State.energyConn:Disconnect(); State.energyConn = nil end
-    energyMaxCache = {}
-end
-
--- ══════════════════════════════════════
---  FEATURE: NO COOLDOWN
--- ══════════════════════════════════════
-local function enableNoCooldown()
-    if State.cooldownConn then State.cooldownConn:Disconnect() end
-
-    State.cooldownConn = RunService.Heartbeat:Connect(function()
-        local touched = 0
-
-        -- 1. Lock ValueBase cooldown → 0
-        for _, v in ipairs(findValueBases(COOLDOWN_KEYWORDS)) do
-            if v.Value > 0 then
-                pcall(function() v.Value = 0 end)
-                touched = touched + 1
-            end
-        end
-
-        -- 2. Lock attribute cooldown → 0
-        for _, entry in ipairs(findAttributes(COOLDOWN_KEYWORDS)) do
-            if entry.val > 0 then
-                pcall(function() entry.obj:SetAttribute(entry.name, 0) end)
-                touched = touched + 1
-            end
-        end
-
-        -- 3. Sweep semua NumberValue di Character yang nilainya 0 < v <= 15
-        --    dan bukan energy keyword — kemungkinan cooldown timer
-        if Character then
-            local ok, descs = pcall(function() return Character:GetDescendants() end)
-            if ok then
-                for _, v in ipairs(descs) do
-                    if (v:IsA("NumberValue") or v:IsA("IntValue")) then
-                        if v.Value > 0 and v.Value <= 15 then
-                            if not matchAny(v.Name, ENERGY_KEYWORDS) then
-                                pcall(function() v.Value = 0 end)
-                                touched = touched + 1
+-- Module: Auto Score
+load_module("autoscore", function()
+    local autoscore_active = false
+    return {
+        toggle = function()
+            autoscore_active = not autoscore_active
+            log("INFO", "AutoScore: " .. (autoscore_active and "ON" or "OFF"))
+            
+            if autoscore_active then
+                spawn(function()
+                    while autoscore_active do
+                        pcall(function()
+                            local ball = workspace:FindFirstChild("Ball")
+                            if ball then
+                                ball.Position = Vector3.new(100, 5, 0)
+                                wait(2)
                             end
-                        end
+                        end)
+                    end
+                end)
+            end
+            active_exploits.autoscore = autoscore_active
+            return autoscore_active
+        end,
+        status = function()
+            return autoscore_active
+        end
+    }
+end)
+
+-- Module: Movement (Speed, Flight, Jump)
+load_module("movement", function()
+    local flight_active = false
+    local infinite_jump_active = false
+    local current_speed = 1
+    
+    return {
+        set_speed = function(value)
+            current_speed = math.clamp(value, 1, 5)
+            pcall(function()
+                local humanoid = game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = 16 * current_speed
+                    log("INFO", "Speed: " .. (current_speed * 100) .. "%")
+                end
+            end)
+            active_exploits.speed = current_speed
+        end,
+        
+        toggle_flight = function()
+            flight_active = not flight_active
+            log("INFO", "Flight: " .. (flight_active and "ON" or "OFF"))
+            
+            if flight_active then
+                spawn(function()
+                    local player = game.Players.LocalPlayer
+                    local character = player.Character
+                    if not character then character = player.CharacterAdded:Wait() end
+                    
+                    local root = character:WaitForChild("HumanoidRootPart")
+                    local bv = Instance.new("BodyVelocity")
+                    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bv.Velocity = Vector3.new(0, 0, 0)
+                    bv.Parent = root
+                    
+                    while flight_active do
+                        pcall(function()
+                            local cam = workspace.CurrentCamera
+                            bv.Velocity = cam.CFrame.LookVector * 8
+                        end)
+                        wait(0.02)
+                    end
+                    bv:Destroy()
+                end)
+            end
+            active_exploits.flight = flight_active
+        end,
+        
+        toggle_infinite_jump = function()
+            infinite_jump_active = not infinite_jump_active
+            log("INFO", "Infinite Jump: " .. (infinite_jump_active and "ON" or "OFF"))
+            
+            if infinite_jump_active then
+                local user_input = game:GetService("UserInputService")
+                user_input.InputBegan:Connect(function(input, gameProcessed)
+                    if gameProcessed then return end
+                    if input.KeyCode == Enum.KeyCode.Space and infinite_jump_active then
+                        pcall(function()
+                            local humanoid = game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                            if humanoid then
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                            end
+                        end)
+                    end
+                end)
+            end
+            active_exploits.jump = infinite_jump_active
+        end,
+        
+        get_speed = function()
+            return current_speed
+        end
+    }
+end)
+
+-- Module: Aiming (Keeper Aimbot)
+load_module("aimbot", function()
+    local aimbot_active = false
+    return {
+        toggle = function()
+            aimbot_active = not aimbot_active
+            log("INFO", "Aimbot: " .. (aimbot_active and "ON" or "OFF"))
+            
+            if aimbot_active then
+                spawn(function()
+                    while aimbot_active do
+                        pcall(function()
+                            local ball = workspace:FindFirstChild("Ball")
+                            local player = game.Players.LocalPlayer
+                            if ball and player.Character then
+                                local keeper_pos = player.Character.HumanoidRootPart.Position
+                                ball.CFrame = CFrame.new(ball.Position, keeper_pos)
+                                
+                                if ball:FindFirstChild("BodyVelocity") then
+                                    ball.BodyVelocity.Velocity = (keeper_pos - ball.Position).Unit * 50
+                                end
+                            end
+                        end)
+                        wait(0.1)
+                    end
+                end)
+            end
+            active_exploits.aimbot = aimbot_active
+        end,
+        status = function()
+            return aimbot_active
+        end
+    }
+end)
+
+-- Module: Visuals (ESP)
+load_module("visuals", function()
+    local esp_active = false
+    return {
+        toggle = function()
+            esp_active = not esp_active
+            log("INFO", "ESP: " .. (esp_active and "ON" or "OFF"))
+            
+            if esp_active then
+                for _, p in pairs(game.Players:GetPlayers()) do
+                    if p ~= game.Players.LocalPlayer and p.Character then
+                        local billboard = Instance.new("BillboardGui")
+                        billboard.Size = UDim2.new(4, 0, 2, 0)
+                        billboard.MaxDistance = 500
+                        billboard.Parent = p.Character:FindFirstChildOfClass("Humanoid") and p.Character.HumanoidRootPart or p.Character
+                        
+                        local textlabel = Instance.new("TextLabel")
+                        textlabel.Text = p.Name
+                        textlabel.TextScaled = true
+                        textlabel.BackgroundTransparency = 0
+                        textlabel.BackgroundColor3 = Color3.new(0, 0, 0)
+                        textlabel.TextColor3 = Color3.new(1, 0.2, 0.2)
+                        textlabel.Parent = billboard
                     end
                 end
             end
+            active_exploits.esp = esp_active
+        end,
+        status = function()
+            return esp_active
         end
-
-        -- 4. GUI cooldown overlay — cari Frame cooldown yang nutup tombol item
-        --    biasanya punya BackgroundTransparency < 1 saat cooldown aktif
-        for _, bar in ipairs(findUIBars(COOLDOWN_KEYWORDS)) do
-            if bar:IsA("Frame") then
-                -- Paksa transparency = 1 (invisible = cooldown keliatan habis)
-                if bar.BackgroundTransparency < 0.95 then
-                    pcall(function() bar.BackgroundTransparency = 1 end)
-                    touched = touched + 1
-                end
-                -- Kalau size-based cooldown (bar menyusut), paksa ke 0
-                if bar.Size.Y.Scale > 0.01 and bar.Size.Y.Scale < 1 then
-                    pcall(function()
-                        bar.Size = UDim2.new(bar.Size.X.Scale, bar.Size.X.Offset, 0, bar.Size.Y.Offset)
-                    end)
-                    touched = touched + 1
-                end
-            end
-        end
-
-        if touched > 0 then
-            log("Cooldown: nulled " .. touched .. " object(s)")
-        end
-    end)
-end
-
-local function disableNoCooldown()
-    if State.cooldownConn then State.cooldownConn:Disconnect(); State.cooldownConn = nil end
-end
-
--- ══════════════════════════════════════
---  FEATURE: AUTO SPRINT
--- ══════════════════════════════════════
-local function enableAutoSprint()
-    if State.sprintConn then State.sprintConn:Disconnect() end
-    State.sprintConn = RunService.Heartbeat:Connect(function()
-        if Humanoid and Humanoid.Parent then
-            Humanoid.WalkSpeed = Config.SprintSpeed
-        end
-    end)
-end
-
-local function disableAutoSprint()
-    if State.sprintConn then State.sprintConn:Disconnect(); State.sprintConn = nil end
-    if Humanoid and Humanoid.Parent then
-        Humanoid.WalkSpeed = Config.NormalSpeed
-    end
-end
-
--- ══════════════════════════════════════
---  GUI BUILD
--- ══════════════════════════════════════
-if PlayerGui:FindFirstChild("ISHub") then
-    PlayerGui:FindFirstChild("ISHub"):Destroy()
-end
-
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name              = "ISHub"
-ScreenGui.ResetOnSpawn      = false
-ScreenGui.ZIndexBehavior    = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder      = 999
-ScreenGui.IgnoreGuiInset    = true
-ScreenGui.Parent            = PlayerGui
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Name              = "MainFrame"
-MainFrame.Size              = UDim2.new(0, 280, 0, 290)
-MainFrame.Position          = UDim2.new(0, 60, 0, 100)
-MainFrame.BackgroundColor3  = Color3.fromRGB(13, 13, 18)
-MainFrame.BorderSizePixel   = 0
-MainFrame.ClipsDescendants  = true
-MainFrame.ZIndex            = 100
-MainFrame.Parent            = ScreenGui
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
-
-local Stroke = Instance.new("UIStroke", MainFrame)
-Stroke.Color        = Color3.fromRGB(70, 165, 255)
-Stroke.Thickness    = 1.5
-Stroke.Transparency = 0.2
-
--- Title Bar — ini yang di-drag
-local TitleBar = Instance.new("TextButton", MainFrame)
-TitleBar.Name               = "TitleBar"
-TitleBar.Size               = UDim2.new(1, 0, 0, 42)
-TitleBar.Position           = UDim2.new(0, 0, 0, 0)
-TitleBar.BackgroundColor3   = Color3.fromRGB(18, 18, 28)
-TitleBar.BorderSizePixel    = 0
-TitleBar.Text               = ""
-TitleBar.ZIndex             = 101
-TitleBar.AutoButtonColor    = false
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
-
-local TitleLabel = Instance.new("TextLabel", TitleBar)
-TitleLabel.Text              = "⚽  IS HUB v1.4"
-TitleLabel.Size              = UDim2.new(1, -50, 1, 0)
-TitleLabel.Position          = UDim2.new(0, 14, 0, 0)
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.TextColor3        = Color3.fromRGB(70, 165, 255)
-TitleLabel.TextSize          = 13
-TitleLabel.Font              = Enum.Font.GothamBold
-TitleLabel.TextXAlignment    = Enum.TextXAlignment.Left
-TitleLabel.ZIndex            = 102
-
-local MinBtn = Instance.new("TextButton", TitleBar)
-MinBtn.Text              = "─"
-MinBtn.Size              = UDim2.new(0, 32, 0, 24)
-MinBtn.Position          = UDim2.new(1, -38, 0.5, -12)
-MinBtn.BackgroundColor3  = Color3.fromRGB(35, 35, 50)
-MinBtn.TextColor3        = Color3.fromRGB(180, 180, 180)
-MinBtn.TextSize          = 13
-MinBtn.Font              = Enum.Font.GothamBold
-MinBtn.BorderSizePixel   = 0
-MinBtn.ZIndex            = 103
-Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
-
--- Status
-local StatusBar = Instance.new("TextLabel", MainFrame)
-StatusBar.Size              = UDim2.new(1, -16, 0, 14)
-StatusBar.Position          = UDim2.new(0, 8, 0, 44)
-StatusBar.BackgroundTransparency = 1
-StatusBar.TextColor3        = Color3.fromRGB(55, 55, 80)
-StatusBar.TextSize          = 9
-StatusBar.Font              = Enum.Font.Gotham
-StatusBar.Text              = "Waiting for match..."
-StatusBar.TextXAlignment    = Enum.TextXAlignment.Left
-StatusBar.ZIndex            = 101
-
--- Content
-local Content = Instance.new("Frame", MainFrame)
-Content.Size                = UDim2.new(1, -16, 1, -70)
-Content.Position            = UDim2.new(0, 8, 0, 62)
-Content.BackgroundTransparency = 1
-Content.ZIndex              = 101
-
-local ListLayout = Instance.new("UIListLayout", Content)
-ListLayout.SortOrder        = Enum.SortOrder.LayoutOrder
-ListLayout.Padding          = UDim.new(0, 6)
-
-Instance.new("UIPadding", Content).PaddingTop = UDim.new(0, 2)
-
--- Log label di bawah
-local LogLabel = Instance.new("TextLabel", MainFrame)
-LogLabel.Size               = UDim2.new(1, -16, 0, 30)
-LogLabel.Position           = UDim2.new(0, 8, 1, -34)
-LogLabel.BackgroundTransparency = 1
-LogLabel.TextColor3         = Color3.fromRGB(50, 50, 70)
-LogLabel.TextSize           = 9
-LogLabel.Font               = Enum.Font.Gotham
-LogLabel.Text               = ""
-LogLabel.TextXAlignment     = Enum.TextXAlignment.Left
-LogLabel.TextYAlignment     = Enum.TextYAlignment.Top
-LogLabel.TextWrapped        = true
-LogLabel.ZIndex             = 101
-
--- Update log setiap 0.5 detik
-RunService.Heartbeat:Connect(function()
-    if #logLines > 0 then
-        LogLabel.Text = table.concat(logLines, "\n")
-    end
+    }
 end)
 
--- ══════════════════════════════════════
---  COMPONENT BUILDERS
--- ══════════════════════════════════════
-local ACCENT   = Color3.fromRGB(70, 165, 255)
-local BG_ROW   = Color3.fromRGB(20, 20, 30)
-local TEXT_HI  = Color3.fromRGB(215, 215, 215)
-local TI       = TweenInfo.new(0.14, Enum.EasingStyle.Quad)
-
-local function makeToggle(label, desc, configKey, onEnable, onDisable)
-    local Row = Instance.new("Frame", Content)
-    Row.Size              = UDim2.new(1, 0, 0, 50)
-    Row.BackgroundColor3  = BG_ROW
-    Row.BorderSizePixel   = 0
-    Row.ZIndex            = 102
-    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
-
-    local Lbl = Instance.new("TextLabel", Row)
-    Lbl.Text              = label
-    Lbl.Size              = UDim2.new(1, -60, 0, 22)
-    Lbl.Position          = UDim2.new(0, 12, 0, 6)
-    Lbl.BackgroundTransparency = 1
-    Lbl.TextColor3        = TEXT_HI
-    Lbl.TextSize          = 13
-    Lbl.Font              = Enum.Font.GothamBold
-    Lbl.TextXAlignment    = Enum.TextXAlignment.Left
-    Lbl.ZIndex            = 103
-
-    local Sub = Instance.new("TextLabel", Row)
-    Sub.Text              = desc
-    Sub.Size              = UDim2.new(1, -60, 0, 16)
-    Sub.Position          = UDim2.new(0, 12, 0, 28)
-    Sub.BackgroundTransparency = 1
-    Sub.TextColor3        = Color3.fromRGB(80, 80, 105)
-    Sub.TextSize          = 10
-    Sub.Font              = Enum.Font.Gotham
-    Sub.TextXAlignment    = Enum.TextXAlignment.Left
-    Sub.ZIndex            = 103
-
-    local Pill = Instance.new("Frame", Row)
-    Pill.Size             = UDim2.new(0, 40, 0, 20)
-    Pill.Position         = UDim2.new(1, -50, 0.5, -10)
-    Pill.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    Pill.BorderSizePixel  = 0
-    Pill.ZIndex           = 103
-    Instance.new("UICorner", Pill).CornerRadius = UDim.new(1, 0)
-
-    local Knob = Instance.new("Frame", Pill)
-    Knob.Size             = UDim2.new(0, 14, 0, 14)
-    Knob.Position         = UDim2.new(0, 3, 0.5, -7)
-    Knob.BackgroundColor3 = Color3.fromRGB(110, 110, 130)
-    Knob.BorderSizePixel  = 0
-    Knob.ZIndex           = 104
-    Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
-
-    local function setVisual(s)
-        TweenService:Create(Pill, TI, {BackgroundColor3 = s and ACCENT or Color3.fromRGB(40,40,55)}):Play()
-        TweenService:Create(Knob, TI, {
-            BackgroundColor3 = s and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,130),
-            Position         = s and UDim2.new(0,23,0.5,-7) or UDim2.new(0,3,0.5,-7)
-        }):Play()
-    end
-
-    setVisual(Config[configKey])
-
-    -- Tombol transparan full row supaya mudah di-tap di Android
-    local Btn = Instance.new("TextButton", Row)
-    Btn.Size              = UDim2.new(1,0,1,0)
-    Btn.BackgroundTransparency = 1
-    Btn.Text              = ""
-    Btn.ZIndex            = 105
-
-    Btn.MouseButton1Click:Connect(function()
-        Config[configKey] = not Config[configKey]
-        setVisual(Config[configKey])
-        if Config[configKey] then
-            if onEnable then onEnable() end
-        else
-            if onDisable then onDisable() end
-        end
-    end)
+-- ============ COMMAND INTERFACE ============
+local function setup_commands()
+    local stamina_mod = loaded_modules.stamina
+    local autoscore_mod = loaded_modules.autoscore
+    local movement_mod = loaded_modules.movement
+    local aimbot_mod = loaded_modules.aimbot
+    local visuals_mod = loaded_modules.visuals
+    
+    _G.exploit = {
+        -- Stamina
+        stamina = function()
+            return stamina_mod.toggle()
+        end,
+        
+        -- Auto Score
+        autoscore = function()
+            return autoscore_mod.toggle()
+        end,
+        
+        -- Movement
+        speed = function(value)
+            movement_mod.set_speed(value or 1)
+        end,
+        
+        flight = function()
+            movement_mod.toggle_flight()
+        end,
+        
+        jump = function()
+            movement_mod.toggle_infinite_jump()
+        end,
+        
+        -- Aiming
+        aimbot = function()
+            return aimbot_mod.toggle()
+        end,
+        
+        -- Visuals
+        esp = function()
+            return visuals_mod.toggle()
+        end,
+        
+        -- Status
+        status = function()
+            log("INFO", "=== EXPLOIT STATUS ===")
+            print("  Stamina: " .. (active_exploits.stamina and "ON" or "OFF"))
+            print("  AutoScore: " .. (active_exploits.autoscore and "ON" or "OFF"))
+            print("  Speed: " .. (active_exploits.speed or 1) .. "x")
+            print("  Flight: " .. (active_exploits.flight and "ON" or "OFF"))
+            print("  Infinite Jump: " .. (active_exploits.jump and "ON" or "OFF"))
+            print("  Aimbot: " .. (active_exploits.aimbot and "ON" or "OFF"))
+            print("  ESP: " .. (active_exploits.esp and "ON" or "OFF"))
+            log("INFO", "=======================")
+        end,
+        
+        -- Reset
+        reset = function()
+            log("WARN", "Resetting all exploits...")
+            active_exploits = {}
+            log("SUCCESS", "Reset complete")
+        end,
+        
+        help = function()
+            log("INFO", "=== EXPLOIT COMMANDS ===")
+            print("exploit.stamina()     - Toggle infinite stamina")
+            print("exploit.autoscore()   - Toggle auto-score")
+            print("exploit.speed(n)      - Set speed (1-5)")
+            print("exploit.flight()      - Toggle flight")
+            print("exploit.jump()        - Toggle infinite jump")
+            print("exploit.aimbot()      - Toggle keeper aimbot")
+            print("exploit.esp()         - Toggle player ESP")
+            print("exploit.status()      - Show active exploits")
+            print("exploit.reset()       - Reset all exploits")
+            print("exploit.help()        - Show this menu")
+            log("INFO", "=======================")
+        end,
+        
+        version = exploit_version
+    }
 end
 
-local function makeSlider(label, configKey, minVal, maxVal, callback)
-    local Row = Instance.new("Frame", Content)
-    Row.Size              = UDim2.new(1, 0, 0, 52)
-    Row.BackgroundColor3  = BG_ROW
-    Row.BorderSizePixel   = 0
-    Row.ZIndex            = 102
-    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+-- ============ INITIALIZATION ============
+log("SUCCESS", "Illegal Soccer Exploit v" .. exploit_version .. " loaded")
+log("INFO", "All modules ready")
+setup_commands()
 
-    local Lbl = Instance.new("TextLabel", Row)
-    Lbl.Text              = label
-    Lbl.Size              = UDim2.new(0.7, 0, 0, 22)
-    Lbl.Position          = UDim2.new(0, 12, 0, 4)
-    Lbl.BackgroundTransparency = 1
-    Lbl.TextColor3        = TEXT_HI
-    Lbl.TextSize          = 12
-    Lbl.Font              = Enum.Font.Gotham
-    Lbl.TextXAlignment    = Enum.TextXAlignment.Left
-    Lbl.ZIndex            = 103
+log("INFO", "Type 'exploit.help()' for commands")
+log("INFO", "Type 'exploit.status()' to see active features")
 
-    local Val = Instance.new("TextLabel", Row)
-    Val.Text              = tostring(Config[configKey])
-    Val.Size              = UDim2.new(0.3, -12, 0, 22)
-    Val.Position          = UDim2.new(0.7, 0, 0, 4)
-    Val.BackgroundTransparency = 1
-    Val.TextColor3        = ACCENT
-    Val.TextSize          = 12
-    Val.Font              = Enum.Font.GothamBold
-    Val.TextXAlignment    = Enum.TextXAlignment.Right
-    Val.ZIndex            = 103
-
-    local Track = Instance.new("Frame", Row)
-    Track.Size            = UDim2.new(1, -24, 0, 6)
-    Track.Position        = UDim2.new(0, 12, 0, 34)
-    Track.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-    Track.BorderSizePixel = 0
-    Track.ZIndex          = 103
-    Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
-
-    local sc = math.clamp((Config[configKey]-minVal)/(maxVal-minVal),0,1)
-
-    local Fill = Instance.new("Frame", Track)
-    Fill.Size             = UDim2.new(sc, 0, 1, 0)
-    Fill.BackgroundColor3 = ACCENT
-    Fill.BorderSizePixel  = 0
-    Fill.ZIndex           = 104
-    Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
-
-    local Knob = Instance.new("Frame", Track)
-    Knob.Size             = UDim2.new(0, 16, 0, 16)
-    Knob.AnchorPoint      = Vector2.new(0.5, 0.5)
-    Knob.Position         = UDim2.new(sc, 0, 0.5, 0)
-    Knob.BackgroundColor3 = Color3.fromRGB(240,240,255)
-    Knob.BorderSizePixel  = 0
-    Knob.ZIndex           = 105
-    Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
-
-    local dragging = false
-
-    local function update(x)
-        local rel = math.clamp((x - Track.AbsolutePosition.X) / math.max(Track.AbsoluteSize.X,1), 0, 1)
-        local val = math.floor(minVal + rel*(maxVal-minVal))
-        Config[configKey] = val
-        Val.Text          = tostring(val)
-        Fill.Size         = UDim2.new(rel, 0, 1, 0)
-        Knob.Position     = UDim2.new(rel, 0, 0.5, 0)
-        if callback then callback(val) end
-    end
-
-    Track.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; update(i.Position.X)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if not dragging then return end
-        if i.UserInputType == Enum.UserInputType.MouseMove
-        or i.UserInputType == Enum.UserInputType.Touch then
-            update(i.Position.X)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-end
-
--- ══════════════════════════════════════
---  BUILD PANEL
--- ══════════════════════════════════════
-makeToggle("Infinite Energy", "Lock energy bar visual + value", "InfiniteEnergy",
-    enableInfiniteEnergy, disableInfiniteEnergy)
-
-makeToggle("No Cooldown", "Reset semua cooldown ke 0", "NoCooldown",
-    enableNoCooldown, disableNoCooldown)
-
-makeToggle("Auto Sprint", "WalkSpeed dikunci ke slider", "AutoSprint",
-    enableAutoSprint, disableAutoSprint)
-
-makeSlider("Sprint Speed", "SprintSpeed", 16, 60, function(val)
-    if Config.AutoSprint and Humanoid and Humanoid.Parent then
-        Humanoid.WalkSpeed = val
-    end
-end)
-
--- ══════════════════════════════════════
---  DRAG — ANDROID TOUCH FIX
---  Pakai TitleBar sebagai TextButton,
---  track posisi touch langsung di InputChanged
--- ══════════════════════════════════════
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        -- Cek bukan tap di MinBtn
-        local minBtnPos = MinBtn.AbsolutePosition
-        local minBtnSize = MinBtn.AbsoluteSize
-        local ix, iy = input.Position.X, input.Position.Y
-        local inMin = ix >= minBtnPos.X and ix <= minBtnPos.X + minBtnSize.X
-                   and iy >= minBtnPos.Y and iy <= minBtnPos.Y + minBtnSize.Y
-        if not inMin then
-            State.Dragging   = true
-            State.DragStart  = Vector2.new(input.Position.X, input.Position.Y)
-            State.FrameStart = Vector2.new(MainFrame.Position.X.Offset, MainFrame.Position.Y.Offset)
-        end
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if not State.Dragging then return end
-    if input.UserInputType == Enum.UserInputType.MouseMove
-    or input.UserInputType == Enum.UserInputType.Touch then
-        local delta  = Vector2.new(input.Position.X, input.Position.Y) - State.DragStart
-        local vp     = workspace.CurrentCamera.ViewportSize
-        local newX   = math.clamp(State.FrameStart.X + delta.X, 0, vp.X - MainFrame.AbsoluteSize.X)
-        local newY   = math.clamp(State.FrameStart.Y + delta.Y, 0, vp.Y - MainFrame.AbsoluteSize.Y)
-        MainFrame.Position = UDim2.new(0, newX, 0, newY)
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        State.Dragging = false
-    end
-end)
-
--- ══════════════════════════════════════
---  MINIMIZE
--- ══════════════════════════════════════
-local FULL_H = 290
-local MINI_H = 42
-
-local function toggleHub()
-    State.HubOpen    = not State.HubOpen
-    Content.Visible  = State.HubOpen
-    StatusBar.Visible = State.HubOpen
-    LogLabel.Visible = State.HubOpen
-    TweenService:Create(MainFrame, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {
-        Size = UDim2.new(0, 280, 0, State.HubOpen and FULL_H or MINI_H)
-    }):Play()
-end
-
-MinBtn.MouseButton1Click:Connect(toggleHub)
-
--- ══════════════════════════════════════
---  RESPAWN
--- ══════════════════════════════════════
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    Character = newChar
-    Humanoid  = newChar:WaitForChild("Humanoid")
-    energyMaxCache = {}
-    task.wait(1)
-    if Config.AutoSprint     then enableAutoSprint() end
-    if Config.InfiniteEnergy then enableInfiniteEnergy() end
-    if Config.NoCooldown     then enableNoCooldown() end
-    log("Respawned — features reattached")
-end)
-
--- ══════════════════════════════════════
---  STATUS UPDATE LOOP
--- ══════════════════════════════════════
-task.spawn(function()
-    while true do
-        task.wait(2)
-        local eCount = #findValueBases(ENERGY_KEYWORDS) + #findAttributes(ENERGY_KEYWORDS) + #findUIBars(ENERGY_KEYWORDS)
-        local cCount = #findValueBases(COOLDOWN_KEYWORDS) + #findAttributes(COOLDOWN_KEYWORDS) + #findUIBars(COOLDOWN_KEYWORDS)
-        StatusBar.Text = "Energy hooks: " .. eCount .. "  |  Cooldown hooks: " .. cCount
-    end
-end)
-
-print("[ IS Hub v1.4 ] Touch drag fixed | GUI bar lock added | DisplayOrder 999")
+print("\n")
+_G.exploit.help()
