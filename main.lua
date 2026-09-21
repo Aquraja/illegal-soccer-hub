@@ -1,27 +1,13 @@
---[[
-    Illegal Soccer — Multi-Feature Exploit
-    Panel + Toggle, Delta Executor Compatible, Infinite Stamina Multi-Strategy
-    Author: outcome
-    Loadstring:
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/USER/illegal-soccer-exploit/main/main.lua"))()
-]]
-
--- ============================================================
--- SERVICES
--- ============================================================
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
-local Workspace         = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CoreGui           = game:GetService("CoreGui")
+local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera      = Workspace.CurrentCamera
+local Camera = Workspace.CurrentCamera
 
--- ============================================================
--- EXECUTOR SANITY + DETECTION
--- ============================================================
 local function has(fn) return type(fn) == "function" end
 
 local ExecutorName = "unknown"
@@ -34,31 +20,28 @@ local IsDelta = ExecutorName:lower():find("delta") ~= nil
 local genv = has(getgenv) and getgenv() or _G
 genv.IS_EXPLOIT = genv.IS_EXPLOIT or {}
 local State = genv.IS_EXPLOIT
-
 State.Config = State.Config or {}
+
 local defaults = {
-    BallMagnet      = false,
+    BallMagnet = false,
     BallMagnetRange = 12,
-    AutoKick        = false,
-    AutoKickRange   = 8,
-    AutoKickPower   = 350,
-    SpeedBoost      = false,
-    WalkSpeed       = 60,
+    AutoKick = false,
+    AutoKickRange = 8,
+    AutoKickPower = 350,
+    SpeedBoost = false,
+    WalkSpeed = 60,
     InfiniteStamina = false,
-    StaminaMax      = 100,
-    AimbotKick      = false,
-    ESP             = false,
-    BallESP         = true,
-    ESPColor        = Color3.fromRGB(255, 60, 60),
-    TweenSpeed      = 120,
+    StaminaMax = 100,
+    AimbotKick = false,
+    ESP = false,
+    BallESP = true,
+    ESPColor = Color3.fromRGB(255, 60, 60),
+    TweenSpeed = 120,
 }
 for k, v in pairs(defaults) do
     if State.Config[k] == nil then State.Config[k] = v end
 end
 
--- ============================================================
--- UI PARENT HELPER (dengan write-access check)
--- ============================================================
 local function tryParent(inst, parent)
     if not parent then return false end
     local ok = pcall(function() inst.Parent = parent end)
@@ -81,9 +64,6 @@ local function getUIParent()
     return pg or CoreGui
 end
 
--- ============================================================
--- UTIL
--- ============================================================
 local function safeFire(remote, ...)
     if not remote then return false end
     local ok, err = pcall(function()
@@ -100,7 +80,7 @@ local function tweenTo(targetCFrame, speed)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     local startCF = hrp.CFrame
-    local dist    = (startCF.Position - targetCFrame.Position).Magnitude
+    local dist = (startCF.Position - targetCFrame.Position).Magnitude
     if dist < 0.5 then hrp.CFrame = targetCFrame return end
     local duration = dist / (speed or State.Config.TweenSpeed)
     local t0 = os.clock()
@@ -112,9 +92,6 @@ local function tweenTo(targetCFrame, speed)
     end)
 end
 
--- ============================================================
--- DISCOVERY
--- ============================================================
 local Cache = { ball=nil, ballLast=0, goals={}, remotes={}, character=nil, humanoid=nil }
 
 local function isBallCandidate(inst)
@@ -205,7 +182,7 @@ local function refreshCharacter()
     local char = LocalPlayer.Character
     if not char or char == Cache.character then return end
     Cache.character = char
-    Cache.humanoid  = char:WaitForChild("Humanoid", 3)
+    Cache.humanoid = char:WaitForChild("Humanoid", 3)
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
@@ -225,14 +202,10 @@ task.spawn(function()
     end
 end)
 
--- ============================================================
--- INFINITE STAMINA — MULTI-STRATEGY
--- ============================================================
-local hookedValues  = {}
-local knownRemotes  = {}
-local knownAttrs    = {}
+local hookedValues = {}
+local knownRemotes = {}
+local knownAttrs = {}
 
--- strategi 1: freeze NumberValue
 local function hookStaminaValue(val)
     if hookedValues[val] then return end
     hookedValues[val] = true
@@ -248,7 +221,6 @@ local function hookStaminaValue(val)
     end)
 end
 
--- strategi 2: hook __newindex di game metatable
 local function installMetaHook()
     if type(hookmetamethod) ~= "function" or type(getrawmetatable) ~= "function" then
         return false
@@ -274,7 +246,6 @@ local function installMetaHook()
     return ok
 end
 
--- strategi 3: hook FireServer di remote stamina
 local function hookStaminaRemote(remote)
     if type(hookfunction) ~= "function" then
         task.spawn(function()
@@ -303,7 +274,6 @@ local function hookStaminaRemote(remote)
         end)
     end)
     if not ok then
-        -- fallback spam
         task.spawn(function()
             while task.wait(0.5) do
                 if State.Config.InfiniteStamina then
@@ -314,7 +284,6 @@ local function hookStaminaRemote(remote)
     end
 end
 
--- strategi 4: freeze attribute
 local function freezeAttribute(name)
     task.spawn(function()
         while task.wait(0.1) do
@@ -327,10 +296,8 @@ local function freezeAttribute(name)
     end)
 end
 
--- scanner
 local function scanStaminaTargets()
     if not State.Config.InfiniteStamina then return end
-
     for _, container in ipairs({
         LocalPlayer,
         LocalPlayer:FindFirstChildOfClass("PlayerGui"),
@@ -348,7 +315,6 @@ local function scanStaminaTargets()
             end
         end
     end
-
     for _, attrName in ipairs({"Stamina","stamina","Energy","energy","Sprint","Fatigue"}) do
         local ok, val = pcall(function() return LocalPlayer:GetAttribute(attrName) end)
         if ok and val ~= nil and not knownAttrs[attrName] then
@@ -356,7 +322,6 @@ local function scanStaminaTargets()
             freezeAttribute(attrName)
         end
     end
-
     for _, r in ipairs(Cache.remotes) do
         local n = r.Name:lower()
         if (n:find("stamina") or n:find("sprint") or n:find("drain")
@@ -371,9 +336,7 @@ end
 installMetaHook()
 
 task.spawn(function()
-    while task.wait(0.3) do
-        pcall(scanStaminaTargets)
-    end
+    while task.wait(0.3) do pcall(scanStaminaTargets) end
 end)
 
 task.spawn(function()
@@ -385,11 +348,6 @@ task.spawn(function()
     end
 end)
 
--- ============================================================
--- FEATURE LOOPS
--- ============================================================
-
--- Ball Magnet
 task.spawn(function()
     while task.wait(0.05) do
         if State.Config.BallMagnet then
@@ -410,7 +368,6 @@ task.spawn(function()
     end
 end)
 
--- power shot helper
 local function powerShot()
     local ball = findBall()
     if not ball then return end
@@ -446,7 +403,6 @@ local function powerShot()
     end
 end
 
--- Auto Kick
 task.spawn(function()
     while task.wait(0.1) do
         if State.Config.AutoKick then
@@ -461,7 +417,6 @@ task.spawn(function()
     end
 end)
 
--- Speed Boost (dengan reset defaultSpeed)
 local defaultSpeed = nil
 
 LocalPlayer.CharacterAdded:Connect(function()
@@ -480,7 +435,6 @@ task.spawn(function()
     end
 end)
 
--- Aimbot Kick
 task.spawn(function()
     while task.wait(0.1) do
         if State.Config.AimbotKick then
@@ -502,9 +456,6 @@ task.spawn(function()
     end
 end)
 
--- ============================================================
--- ESP
--- ============================================================
 local ESPFolder = Instance.new("Folder")
 ESPFolder.Name = "IS_ESP"
 for _, parent in ipairs({
@@ -513,37 +464,34 @@ for _, parent in ipairs({
 }) do
     if tryParent(ESPFolder, parent) then break end
 end
-if not ESPFolder.Parent then
-    warn("[IS-E] ESP folder gagal dipasang — ESP gak render.")
-end
 
 local function makeESP(part, color, label)
     local box = Instance.new("BoxHandleAdornment")
-    box.Size         = part.Size + Vector3.new(0.2, 0.2, 0.2)
-    box.Adornee      = part
-    box.AlwaysOnTop  = true
-    box.ZIndex       = 5
+    box.Size = part.Size + Vector3.new(0.2, 0.2, 0.2)
+    box.Adornee = part
+    box.AlwaysOnTop = true
+    box.ZIndex = 5
     box.Transparency = 0.6
-    box.Color3       = color
-    box.Parent       = ESPFolder
+    box.Color3 = color
+    box.Parent = ESPFolder
 
     if label then
         local bb = Instance.new("BillboardGui")
-        bb.Size        = UDim2.new(0, 100, 0, 20)
+        bb.Size = UDim2.new(0, 100, 0, 20)
         bb.StudsOffset = Vector3.new(0, 3, 0)
         bb.AlwaysOnTop = true
-        bb.Adornee     = part
-        bb.Parent      = ESPFolder
+        bb.Adornee = part
+        bb.Parent = ESPFolder
 
         local txt = Instance.new("TextLabel")
-        txt.Size                   = UDim2.new(1, 0, 1, 0)
+        txt.Size = UDim2.new(1, 0, 1, 0)
         txt.BackgroundTransparency = 1
-        txt.TextColor3             = color
+        txt.TextColor3 = color
         txt.TextStrokeTransparency = 0
-        txt.TextScaled             = true
-        txt.Font                   = Enum.Font.GothamBold
-        txt.Text                   = label
-        txt.Parent                 = bb
+        txt.TextScaled = true
+        txt.Font = Enum.Font.GothamBold
+        txt.Text = label
+        txt.Parent = bb
     end
     return box
 end
@@ -580,7 +528,6 @@ task.spawn(function()
     end
 end)
 
--- Teleport ke bola
 local function tpToBall()
     local ball, char = findBall(), Cache.character
     if not (ball and char) then return end
@@ -589,14 +536,12 @@ local function tpToBall()
     tweenTo(ball.CFrame * CFrame.new(0, 0, 3), State.Config.TweenSpeed)
 end
 
--- ============================================================
--- PANEL
--- ============================================================
 local function buildPanel()
     local gui = Instance.new("ScreenGui")
-    gui.Name           = "IS_Panel"
-    gui.ResetOnSpawn   = false
+    gui.Name = "IS_Panel"
+    gui.ResetOnSpawn = false
     gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 999999
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
     local parented = false
@@ -614,121 +559,103 @@ local function buildPanel()
             break
         end
     end
+    if not parented then return end
 
-    if not parented then
-        warn("[IS-E] FATAL: gagal parent ScreenGui. panel gak akan muncul.")
-        return
-    end
-    print("[IS-E] panel dipasang ke: " .. gui.Parent:GetFullName())
-
-    -- ukuran panel mobile-friendly
     local panelW, panelH = 300, 420
     if IsDelta or UserInputService.TouchEnabled then
         panelW, panelH = 320, 460
     end
 
-    -- tombol floating
     local openBtn = Instance.new("TextButton")
-    openBtn.Size             = UDim2.new(0, 60, 0, 60)
-    openBtn.Position         = UDim2.new(0, 20, 0, 100)
+    openBtn.Size = UDim2.new(0, 80, 0, 80)
+    openBtn.Position = UDim2.new(1, -100, 1, -200)
     openBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
-    openBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
-    openBtn.Font             = Enum.Font.GothamBold
-    openBtn.TextSize         = 18
-    openBtn.Text             = "IS"
-    openBtn.BorderSizePixel  = 0
-    openBtn.Draggable        = true
-    openBtn.Active           = true
-    openBtn.Parent           = gui
+    openBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    openBtn.Font = Enum.Font.GothamBold
+    openBtn.TextSize = 20
+    openBtn.Text = "IS"
+    openBtn.BorderSizePixel = 0
+    openBtn.Draggable = true
+    openBtn.Active = true
+    openBtn.Parent = gui
     do
         local c = Instance.new("UICorner") c.CornerRadius = UDim.new(1, 0) c.Parent = openBtn
+        local s = Instance.new("UIStroke")
+        s.Color = Color3.fromRGB(120, 180, 255)
+        s.Thickness = 2
+        s.Parent = openBtn
     end
 
-    -- panel utama
     local main = Instance.new("Frame")
-    main.Size             = UDim2.new(0, panelW, 0, panelH)
-    main.Position         = UDim2.new(0, 20, 0, 180)
+    main.Size = UDim2.new(0, panelW, 0, panelH)
+    main.Position = UDim2.new(1, -panelW - 20, 1, -panelH - 220)
     main.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-    main.BorderSizePixel  = 0
-    main.Active           = true
-    main.Draggable        = true
-    main.Visible          = false
-    main.Parent           = gui
+    main.BorderSizePixel = 0
+    main.Active = true
+    main.Draggable = true
+    main.Visible = false
+    main.Parent = gui
     do
         local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 10) c.Parent = main
         local s = Instance.new("UIStroke")
-        s.Color     = Color3.fromRGB(50, 100, 200)
+        s.Color = Color3.fromRGB(50, 100, 200)
         s.Thickness = 1.5
-        s.Parent    = main
+        s.Parent = main
     end
 
-    -- header
     local header = Instance.new("TextLabel")
-    header.Size             = UDim2.new(1, 0, 0, 40)
+    header.Size = UDim2.new(1, 0, 0, 40)
     header.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    header.TextColor3       = Color3.fromRGB(255, 255, 255)
-    header.Font             = Enum.Font.GothamBold
-    header.TextSize         = 14
-    header.Text             = "ILLEGAL SOCCER  •  outcome"
-    header.BorderSizePixel  = 0
-    header.Parent           = main
+    header.TextColor3 = Color3.fromRGB(255, 255, 255)
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 14
+    header.Text = "ILLEGAL SOCCER"
+    header.BorderSizePixel = 0
+    header.Parent = main
     do
         local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 10) c.Parent = header
     end
 
     local closeBtn = Instance.new("TextButton")
-    closeBtn.Size             = UDim2.new(0, 30, 0, 30)
-    closeBtn.Position         = UDim2.new(1, -35, 0, 5)
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 5)
     closeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-    closeBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
-    closeBtn.Font             = Enum.Font.GothamBold
-    closeBtn.TextSize         = 14
-    closeBtn.Text             = "X"
-    closeBtn.BorderSizePixel  = 0
-    closeBtn.Parent           = header
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 14
+    closeBtn.Text = "X"
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = header
     do
         local c = Instance.new("UICorner") c.CornerRadius = UDim.new(1, 0) c.Parent = closeBtn
     end
 
-    -- status
-    local status = Instance.new("TextLabel")
-    status.Size                   = UDim2.new(1, -10, 0, 18)
-    status.Position               = UDim2.new(0, 5, 0, 42)
-    status.BackgroundTransparency = 1
-    status.TextColor3             = Color3.fromRGB(140, 140, 150)
-    status.Font                   = Enum.Font.Gotham
-    status.TextSize               = 11
-    status.TextXAlignment         = Enum.TextXAlignment.Left
-    status.Text                   = "executor: " .. ExecutorName
-    status.Parent                 = main
-
-    -- list
     local list = Instance.new("ScrollingFrame")
-    list.Size                   = UDim2.new(1, -10, 1, -70)
-    list.Position               = UDim2.new(0, 5, 0, 64)
+    list.Size = UDim2.new(1, -10, 1, -60)
+    list.Position = UDim2.new(0, 5, 0, 50)
     list.BackgroundTransparency = 1
-    list.BorderSizePixel        = 0
-    list.ScrollBarThickness     = 4
-    list.CanvasSize             = UDim2.new(0, 0, 0, 0)
-    list.AutomaticCanvasSize    = Enum.AutomaticSize.Y
-    list.Parent                 = main
+    list.BorderSizePixel = 0
+    list.ScrollBarThickness = 4
+    list.CanvasSize = UDim2.new(0, 0, 0, 0)
+    list.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    list.Parent = main
 
     local layout = Instance.new("UIListLayout")
     layout.Padding = UDim.new(0, 6)
-    layout.Parent  = list
+    layout.Parent = list
 
     local function makeToggle(label, key)
         local btn = Instance.new("TextButton")
-        btn.Size             = UDim2.new(1, -6, 0, 40)
+        btn.Size = UDim2.new(1, -6, 0, 40)
         btn.BackgroundColor3 = State.Config[key]
             and Color3.fromRGB(45, 160, 80)
             or Color3.fromRGB(38, 38, 48)
-        btn.TextColor3       = Color3.fromRGB(255, 255, 255)
-        btn.Font             = Enum.Font.Gotham
-        btn.TextSize         = 13
-        btn.Text             = label .. "  [" .. (State.Config[key] and "ON" or "OFF") .. "]"
-        btn.BorderSizePixel  = 0
-        btn.Parent           = list
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 13
+        btn.Text = label .. "  [" .. (State.Config[key] and "ON" or "OFF") .. "]"
+        btn.BorderSizePixel = 0
+        btn.Parent = list
         do
             local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 8) c.Parent = btn
         end
@@ -744,14 +671,14 @@ local function buildPanel()
 
     local function makeAction(label, color, cb)
         local btn = Instance.new("TextButton")
-        btn.Size             = UDim2.new(1, -6, 0, 40)
+        btn.Size = UDim2.new(1, -6, 0, 40)
         btn.BackgroundColor3 = color or Color3.fromRGB(50, 100, 200)
-        btn.TextColor3       = Color3.fromRGB(255, 255, 255)
-        btn.Font             = Enum.Font.GothamBold
-        btn.TextSize         = 13
-        btn.Text             = label
-        btn.BorderSizePixel  = 0
-        btn.Parent           = list
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 13
+        btn.Text = label
+        btn.BorderSizePixel = 0
+        btn.Parent = list
         do
             local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 8) c.Parent = btn
         end
@@ -759,13 +686,13 @@ local function buildPanel()
         return btn
     end
 
-    makeToggle("Ball Magnet",      "BallMagnet")
-    makeToggle("Auto Kick",        "AutoKick")
-    makeToggle("Speed Boost",      "SpeedBoost")
+    makeToggle("Ball Magnet", "BallMagnet")
+    makeToggle("Auto Kick", "AutoKick")
+    makeToggle("Speed Boost", "SpeedBoost")
     makeToggle("Infinite Stamina", "InfiniteStamina")
-    makeToggle("Aimbot Kick",      "AimbotKick")
-    makeToggle("ESP Pemain",       "ESP")
-    makeToggle("ESP Bola",         "BallESP")
+    makeToggle("Aimbot Kick", "AimbotKick")
+    makeToggle("ESP Pemain", "ESP")
+    makeToggle("ESP Bola", "BallESP")
 
     makeAction("TELEPORT KE BOLA", Color3.fromRGB(50, 100, 200), tpToBall)
     makeAction("PANIC OFF", Color3.fromRGB(200, 60, 60), function()
@@ -789,9 +716,6 @@ local function buildPanel()
     closeBtn.MouseButton1Click:Connect(function()
         main.Visible = false
     end)
-
-    print("[IS-E] panel siap. tap tombol 'IS' buat buka.")
 end
 
 buildPanel()
-print("[IS-E] Illegal Soccer exploit loaded.")
